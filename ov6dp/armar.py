@@ -167,7 +167,7 @@ class OV6DPProcessor(ImageProcessor):
         
         # pass images through ov6dp
         results = self.ov6dp.get_poses_from_image(rbg_torch, depth_torch, self.vocab, CLIP_image_encode=False)
-        class_names, transform, pointclouds, image_pointcloud = results
+        class_names, transform, pointclouds, image_pointcloud, input_boxes, masks, confidences = results
 
         ts_3 = time.time()
         time_provided = int(time.time() * 1e6)

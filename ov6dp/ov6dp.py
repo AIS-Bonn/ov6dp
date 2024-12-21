@@ -1,6 +1,5 @@
 import math
 import time
-from tkinter import E
 import numpy as np
 import json
 import torch
@@ -21,7 +20,7 @@ from model_components.object_detector import ObjectDetector
 #from model_components.pcl_matching import match_pointclouds
 from model_components.torch_matching import match_pointclouds 
 from datatools.object_model_processor import read_ply_to_tensor, PointcloudCreator
-from datatools.pcl_visualization import visualize_pointclouds, remove_zero_points
+from datatools.pcl_visualization2 import PCLVisualizer, remove_zero_points
 from coco_writer import COCOWriter, write_transform
 
 OBJECT_NAMES = [
@@ -357,7 +356,7 @@ class OV6DP(nn.Module):
 
             print(f"{name}: {fitness}\n{transform}")
 
-        return class_names, transforms, pointclouds, image_pointcloud, input_boxes, masks
+        return class_names, transforms, pointclouds, image_pointcloud, input_boxes, masks, confidences
 
 
 def load_image(path):
@@ -405,51 +404,61 @@ def match_by_initials(source_list, target_list):
     return result
 
 if __name__ == "__main__":
-    #rgb_image_path = Path("D:/data/ov6dp/KITchen_rgb_1/000/000000.png")
-    #depth_image_path = Path("D:/data/ov6dp/KITchen_depth_1/000/000000.png")
-    #voacb = "banana. soup-can."
+    """"
+    This example shows how the 
+    """
+    # Additional object info for how we saved Detections and Transforms.
     classes = ["bowl", "plate", "banana", "fork", "campbells_soup_can", "apple"]
-    vocab = "bowl. plate. banana. fork. soup can. apple."
     name_map_dict ={"bowl": "024_bowl",
                     "banana": "011_banana",
                     "campbells_soup_can": "005_tomato_soup_can",
                     "apple": "013_apple",
                     "plate": "029_plate",
                     "fork": "030_fork"}
+    
+    # vacbulary for the open vocabulary detections. Write in lowere case with objects seperated by periods. For details see the Grouding-Sam2 documentation
+    vocab = "bowl. plate. banana. fork. soup can. apple."
+    
 
+    # example path to data and output folders
     data_folder = pathlib.Path(__file__).parent.parent.resolve() / "saved_images"
     output_folder = pathlib.Path(__file__).parent.parent.resolve() / "outputs"
 
+    # if not operatiang on azure connect, add in camera_matrix parameter (3x3 torch tensor)
     ov6dp = OV6DP()
+    # prepare to write down detections in COCO format
     coco_writer = COCOWriter(classes)
 
+    # example iteration over images, change file loading and reult saving as required for your use case.
     for i in range(1):
         rgb_image_path = data_folder / f"image_rgb_{i}.jpg"
         depth_image_path = data_folder / f"image_depth_{i}.npy"
 
+        # load images. The RGB image is expected as a (3, H, W) torch tensor and the Depth information is expected as a (1, H, W) torch tensor.
         rgb_image = load_image(rgb_image_path)
         depth_image = load_image_depth(depth_image_path)[None, ...]
 
         print(rgb_image.shape, rgb_image.max(), rgb_image.min())
         print(depth_image.shape, depth_image.max(), depth_image.min())
-        #print(depth_image[0].shape, depth_image[0].max(), depth_image[0].min())
-        #print(depth_image[1].shape, depth_image[1].max(), depth_image[1].min())
-        #print(depth_image[2].shape, depth_image[2].max(), depth_image[2].min())
 
-        #depth_image = depth_shenanigains(depth_image)
-        #print(depth_image.shape, depth_image.dtype, depth_image.max(), depth_image.min())
-        class_names, transform_matrices, pointclouds, image_pointcloud, input_boxes, masks = ov6dp.get_poses_from_image(rgb_image, depth_image, vocab)
-        #annotated_frame, annotated_frame_masks = ov6dp.get_detection_cv2_images()
-        #cv2.imshow("annotated_iamge", annotated_frame_masks)
+        # get results from model. Pose is given by the transform in the camera frame.
+        class_names, transform_matrices, pointclouds, image_pointcloud, input_boxes, masks, confidences = ov6dp.get_poses_from_image(rgb_image, depth_image, vocab)
 
+        # show the object detections as bounding boxes or with masks as cv2 images
+        annotated_frame, annotated_frame_masks = ov6dp.get_detection_cv2_images()
+        cv2.imshow("annotated_iamge", annotated_frame_masks)
+
+        # save detections and estimated pose. Replace with your own functions as required for your use case.
         coco_names = match_by_initials(class_names, classes)
-        #coco_writer.convert_to_coco_format(f"image_rgb_{i}.jpg", coco_names, input_boxes, masks)
+        coco_writer.convert_to_coco_format(f"image_rgb_{i}.jpg", coco_names, input_boxes, masks)
         transform_names = [name_map_dict[name] for name in coco_names]
-        #write_transform(transform_matrices, transform_names, output_folder / f"image_rgb_{i}annotations.txt")
+        write_transform(transform_matrices, transform_names, output_folder / f"image_rgb_{i}annotations.txt")
 
-    #coco_writer.write(output_folder / f"coco_detections.json")
+    # write dections
+    coco_writer.write(output_folder / f"coco_detections.json")
 
+    # visualize pointclouds for the last image of the dataset using pyvista
     pcls = [pcl for pcl in pointclouds]
     pcls.insert(0, remove_zero_points(image_pointcloud))
-
-    visualize_pointclouds(pcls)
+    vis = PCLVisualizer()
+    vis.visualize_pointclouds(pcls)
